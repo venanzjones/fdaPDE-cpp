@@ -184,7 +184,7 @@ class RegressionBase :
     }
     // correct \Psi setting to zero rows corresponding to masked observations
     void correct_psi() {
-        if (masked_obs().any()) B_ = (~masked_obs().blk_repeat(1, n_basis())).select(Psi(not_nan()));
+        if (masked_obs().any()) B_ = (~masked_obs().repeat(1, n_basis())).select(Psi(not_nan()));
     }
 };
 
