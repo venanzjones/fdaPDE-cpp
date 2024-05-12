@@ -29,6 +29,10 @@ using fdapde::core::BinaryMatrix;
 namespace fdapde {
 namespace models {
 
+namespace internal {
+consteval int de_select_quadrature(int local_dim) { return local_dim == 1 ? 4 : local_dim == 2 ? 6 : 14; }
+};   // namespace internal
+
 template <typename Model, typename RegularizationType>
 class DensityEstimationBase :
     public select_regularization_base<Model, RegularizationType>::type,
@@ -39,11 +43,22 @@ class DensityEstimationBase :
     BinaryMatrix<Dynamic> point_pattern_;   // n_spatial_locs X n_temporal_locs point pattern matrix
     DVector<double> g_;                     // expansion coefficients vector of estimated density function
     DMatrix<double> PsiQuad_;               // reference element basis evaluation at quadrature nodes
-    DMatrix<double> w_;                     // quadrature weights
+    DVector<double> w_;                     // quadrature weights
     SpMatrix<double> Upsilon_;              // \Upsilon_(i,:) = \Phi(i,:) \kron S(p_i) \Psi
+
+    template <typename IntegratorType_, typename BasisType_>
+    DMatrix<double> eval_basis_at_quadrature_(BasisType_&& basis, IntegratorType_&& integrator) const {
+        using IntegratorType = std::decay_t<IntegratorType_>;
+        DMatrix<double> result(IntegratorType::num_nodes, basis.size());
+        for (int i = 0; i < IntegratorType::num_nodes; ++i) {
+            for (int j = 0; j < basis.size(); ++j) { result(i, j) = basis[j](integrator.nodes[i]); }
+        }
+        return result;
+    }
    public:
     using Base = typename select_regularization_base<Model, RegularizationType>::type;
     using SamplingBase<Model>::Psi;     // matrix of basis evaluations at data locations
+    using SamplingBase<Model>::n_spatial_locs;
 
     DensityEstimationBase() = default;
     // space-only constructor
@@ -52,33 +67,24 @@ class DensityEstimationBase :
         requires(is_space_only<Model>::value)
         : Base(pde), SamplingBase<Model>(Sampling::pointwise) {
         pde.init();   // early PDE initialization
-        static constexpr int LocalDim = std::decay_t<PDE_>::SpaceDomainType::local_dim;
-        static constexpr int n_quadrature_nodes = 6; // -------------------------- generalize wrt dimensionality
-	// allocate space
-	w_.resize(n_quadrature_nodes, 1);
-	PsiQuad_.resize(n_quadrature_nodes, pde.reference_basis().size());
-	// compute reference basis evaluation at quadrature nodes
-	core::IntegratorTable<LocalDim, n_quadrature_nodes> integrator {};
-        for (int i = 0; i < n_quadrature_nodes; ++i) {
-            w_(i, 0) = integrator.weights[i];
-            for (int j = 0; j < pde.reference_basis().size(); ++j) {
-                PsiQuad_(i, j) = pde.reference_basis()[j](integrator.nodes[i]);
-            }
-        }
-        // store functor for approximation of \int_{\mathcal{D}} \exp(g). Computes
+        constexpr int local_dim = std::decay_t<PDE_>::SpaceDomainType::local_dim;
+        constexpr int n_quadrature_nodes = internal::de_select_quadrature(local_dim);
+        // compute reference basis evaluation at quadrature nodes
+        core::IntegratorTable<local_dim, n_quadrature_nodes> integrator {};
+        PsiQuad_ = eval_basis_at_quadrature_(pde.reference_basis(), integrator);
+        w_ = Eigen::Map<SVector<n_quadrature_nodes>>(integrator.weights.data());
+        // store functor for approximation of \int_{\mathcal{D}} \exp(g(p)). Computes
         // \sum_{e \in mesh} {e.measure() * \sum_j {w_j * exp[\sum_i {g_i * \psi_i(q_j)}]}}
         int_exp_ = [&](const DVector<double>& g) {
             double result = 0;
             for (auto e = pde.domain().cells_begin(); e != pde.domain().cells_end(); ++e) {
-                result +=
-                  (w_.transpose() * (PsiQuad_ * g(pde.dofs().row(e->id()))).array().exp().matrix())[0] * e->measure();
+                result += w_.dot((PsiQuad_ * g(pde.dofs().row(e->id()))).array().exp().matrix()) * e->measure();
             }
             return result;
         };
-	// store functor for computation of \nabla_g \int_{\mathcal{D}} \exp(g)
+	// store functor for computation of \nabla_g(\int_{\mathcal{D}} \exp(g(p)))
         grad_int_exp_ = [&](const DVector<double>& g) {
-            DVector<double> grad(g.rows());
-            grad.setZero();
+            DVector<double> grad = DVector<double>::Zero(g.rows());
             for (auto e = pde.domain().cells_begin(); e != pde.domain().cells_end(); ++e) {
                 grad(pde.dofs().row(e->id())) +=
                   PsiQuad_.transpose() *
@@ -90,12 +96,63 @@ class DensityEstimationBase :
     }
     // space-time separable constructor
     template <typename SpacePDE_, typename TimePDE_>
-    DensityEstimationBase(SpacePDE_&& space_penalty, TimePDE_&& time_penalty)
+    DensityEstimationBase(SpacePDE_&& s_pen, TimePDE_&& t_pen)
         requires(is_space_time_separable<Model>::value)
-        : Base(space_penalty, time_penalty), SamplingBase<Model>(Sampling::pointwise) {
-        // store space-time integrator
+        : Base(s_pen, t_pen), SamplingBase<Model>(Sampling::pointwise) {
+        // early penalties initialization
+        s_pen.init();
+        t_pen.init();
+        constexpr int local_dim = std::decay_t<SpacePDE_>::SpaceDomainType::local_dim;
+        constexpr int n_quadrature_s = internal::de_select_quadrature(local_dim);
+        constexpr int n_quadrature_t = 5;
+        // compute reference basis evaluation at quadrature nodes
+        core::IntegratorTable<local_dim, n_quadrature_s> s_integrator {};
+        core::IntegratorTable<1, n_quadrature_t, core::GaussLegendre> t_integrator {};
+        DMatrix<double> Psi = eval_basis_at_quadrature_(s_pen.reference_basis(), s_integrator);
+        DMatrix<double> Phi = eval_basis_at_quadrature_(t_pen.reference_basis(), t_integrator);
+        PsiQuad_ = Kronecker(Phi, Psi);
+        w_ = Kronecker(
+          Eigen::Map<SVector<n_quadrature_t>>(t_integrator.weights.data()),
+          Eigen::Map<SVector<n_quadrature_s>>(s_integrator.weights.data()));
+        // store functor for approximation of double integral \int_T \int_{\mathcal{D}} \exp(g(p, t))
+        int_exp_ =
+          [&, n = s_pen.reference_basis().size(), m = t_pen.reference_basis().size()](const DVector<double>& g) {
+              double result = 0;
+              DVector<int> active_dofs(n * m);
+              for (auto e = s_pen.domain().cells_begin(); e != s_pen.domain().cells_end(); ++e) {
+                  for (auto i = t_pen.domain().cells_begin(); i != t_pen.domain().cells_end(); ++i) {
+                      for (int j = 0; j < m; ++j) {   // compute active dofs
+                          active_dofs.middleRows(j * n, n) =
+                            s_pen.dofs().row(e->id()).transpose().array() + j * Base::n_spatial_basis();
+                      }
+                      result += w_.dot((PsiQuad_ * g(active_dofs)).array().exp().matrix()) * e->measure() *
+                                (0.5 * i->measure());
+                  }
+              }
+              return result;
+          };
+        // store functor for computation of \nabla_g(\int_T \int_{\mathcal{D}} \exp(g(p, t)))
+        grad_int_exp_ =
+	  [&, n = s_pen.reference_basis().size(), m = t_pen.reference_basis().size()](const DVector<double>& g) {
+            DVector<double> grad = DVector<double>::Zero(g.rows());
+            DVector<int> active_dofs(n * m);
+            for (auto e = s_pen.domain().cells_begin(); e != s_pen.domain().cells_end(); ++e) {
+                for (auto i = t_pen.domain().cells_begin(); i != t_pen.domain().cells_end(); ++i) {
+                    for (int j = 0; j < m; ++j) {   // compute active dofs
+                        active_dofs.middleRows(j * n, n) =
+                          s_pen.dofs().row(e->id()).transpose().array() + j * Base::n_spatial_basis();
+                    }
+                    grad(active_dofs) += PsiQuad_.transpose() *
+                                         ((PsiQuad_ * g(active_dofs)).array().exp()).cwiseProduct(w_.array()).matrix() *
+                                         e->measure() * (0.5 * i->measure());
+                }
+            }
+            return grad;
+        };
     }
 
+  // we must give a proper view of the data here, because locations are the data and now there is no such managing capability
+  
     // getters
     int n_obs() const { return point_pattern_.count(); };
     const SpMatrix<double>& Psi() const { return Psi(not_nan()); }
@@ -111,14 +168,32 @@ class DensityEstimationBase :
 
     // initialization methods
     void analyze_data() {
-        point_pattern_ = BinaryMatrix<Dynamic>::Ones(Base::n_locs(), 1);   // ------------- generalize for space-time
         if constexpr (is_space_time_separable<Model>::value) {
-            Upsilon_ = point_pattern_.vector_view().repeat(1, Base::n_basis()).select(Psi());
+	  Upsilon_.resize(Base::n_temporal_locs(), Base::n_basis());
+            std::vector<fdapde::Triplet<double>> triplet_list;
+            // reserve with some bound
+            for (int i = 0; i < Base::n_temporal_locs(); ++i) {
+	      // kronecker product between Phi i-th row and Psi i-th row
+	      SpMatrix<double> tmp = Kronecker(SpMatrix<double>(Base::Phi().row(i)), SpMatrix<double>(Psi().row(i)));
+                for (int j = 0; j < tmp.outerSize(); ++j)
+                    for (SpMatrix<double>::InnerIterator it(tmp, j); it; ++it) {
+                        triplet_list.emplace_back(i, it.col(), it.value());
+                    }
+            }
+            Upsilon_.setFromTriplets(triplet_list.begin(), triplet_list.end());
+            Upsilon_.makeCompressed();
+            // if (point_pattern_.size() == 0) {
+            //     point_pattern_ = BinaryMatrix<Dynamic>::Ones(n_spatial_locs(), Base::n_temporal_locs());
+            // }
+        } else {
+            point_pattern_ = BinaryMatrix<Dynamic>::Ones(Base::n_locs(), 1);
         }
         return;
     }
+
+    void tensorize_psi() { return; }   // avoid tensorization for space-time problems
     void correct_psi() { return; }
-    void set_point_pattern(const DMatrix<double>& point_pattern) { point_pattern_ = point_pattern; }
+    void set_point_pattern(const BinaryMatrix<Dynamic>& point_pattern) { point_pattern_ = point_pattern; }
 };
 
 }   // namespace models
