@@ -17,6 +17,7 @@
 #ifndef __DEPDE_H__
 #define __DEPDE_H__
 
+#include <fdaPDE/optimization.h>
 #include "../model_base.h"
 #include "../model_macros.h"
 #include "../sampling_design.h"
@@ -29,19 +30,19 @@ template <typename RegularizationType_>
 class DEPDE : public DensityEstimationBase<DEPDE<RegularizationType_>, RegularizationType_> {
    private:
     using Base = DensityEstimationBase<DEPDE<RegularizationType_>, RegularizationType_>;
-    double llik_;        // -1^\top * \Upsilon * g
-    double int_exp_g_;   // \sum_{e \in mesh} w^\top * exp[\PsiQuad * g_e]
-    double pen_;         // g^\top * P_{\lambda_D, \lambda_T} * g
+    double tol_ = 1e-5;   // tolerance on custom stopping criterion
+    core::Optimizer<DEPDE<RegularizationType_>> opt_;
+    DVector<double> g_init_; 
    public:
     using RegularizationType = std::decay_t<RegularizationType_>;
     using This = DEPDE<RegularizationType>;
     using Base::grad_int_exp;   // \nabla_g (\int_{\mathcal{D}} \exp(g))
     using Base::int_exp;        // \int_{\mathcal{D}} \exp(g)
+    using Base::n_locs;         // overall number of data locations
     using Base::n_obs;          // number of observations
     using Base::P;              // discretized penalty matrix
     using Base::PsiQuad;        // reference basis evaluation at quadrature nodes
     using Base::Upsilon;        // \Upsilon_(i,:) = \Phi(i,:) \kron S(p_i) \Psi
-    using Base::w;              // weights of quadrature rule
 
     // space-only constructor
     template <typename PDE_>
@@ -51,6 +52,27 @@ class DEPDE : public DensityEstimationBase<DEPDE<RegularizationType_>, Regulariz
     DEPDE(SpacePDE_&& space_penalty, TimePDE_&& time_penalty) requires(is_space_time_separable<This>::value)
         : Base(space_penalty, time_penalty) { }
 
+    // K-fold cross validation index
+    struct CVScore {
+        CVScore(DEPDE& model) : model_(model) { }
+        double operator()(
+          const DVector<double>& lambda, [[maybe_unused]] const BinaryVector<fdapde::Dynamic>& train_mask,
+          const BinaryVector<fdapde::Dynamic>& test_mask) {
+            model_.set_lambda(lambda);
+            // fit model on train set
+            model_.set_mask(test_mask);   // discard test set from training phase
+            model_.init();
+            model_.solve();
+            double test_err = 0;
+            for (int i = 0; i < test_mask.size(); ++i) {
+	      if (test_mask[i]) { test_err += std::exp(model_.Psi().row(i) * model_.g()); }
+            }
+            return model_.int_exp(2. * model_.g()) - 2. / test_mask.count() * test_err;
+        }
+       private:
+        DEPDE& model_;
+    };
+
     // evaluates penalized negative log-likelihood at point
     // L(g) = - 1^\top*\Upsilon*g + \sum_{e \in mesh} w^\top*exp[\Psi_q*g_e] + \lambda_S*g^\top*P*g
     double operator()(const DVector<double>& g) {
@@ -59,11 +81,26 @@ class DEPDE : public DensityEstimationBase<DEPDE<RegularizationType_>, Regulariz
     // log-likelihood gradient functor
     // \nabla_g(L(g)) = -\Upsilon^\top*1 + n*\sum_{e \in mesh} w*exp[\Psi_q*g_e]*\Psi_q^\top + 2*P*g
     std::function<DVector<double>(const DVector<double>&)> derive() {
-        return [this](const DVector<double>& g) -> DVector<double> {
-            return -Upsilon().transpose() * DVector<double>::Ones(n_obs()) + n_obs() * grad_int_exp(g) + 2 * P() * g;
-        };
+        return [this, dllik = DVector<double>(-Upsilon().transpose() * DVector<double>::Ones(n_locs()))](
+                 const DVector<double>& g) {
+	    return DVector<double>(dllik + n_obs() * grad_int_exp(g) + 2 * P() * g);
+	};
     }
+    // optimization algorithm custom stopping criterion
+    bool stopping_criterion(const DVector<double>& g) {
+        double llik = -(Upsilon() * g).sum() + n_locs() * int_exp(g);
+        double loss = llik + g.dot(P() * g);
+        return llik > tol_ || loss > tol_;
+    }
+    // call optimization algorithm for log-likelihood minimization
+    void solve() { Base::g_ = opt_.optimize(*this, g_init_); }
     void init_model() { return; }
+    // setters
+    void set_tolerance(double tol) { tol_ = tol; }
+    void set_g_init(const DVector<double>& g_init) { g_init_ = g_init; }
+    template <typename Optimizer> void set_optimizer(Optimizer&& opt) { opt_ = opt; }
+    // getters
+    const DVector<double>& g_init() const { return g_init_; }
 };
 
 }   // namespace models

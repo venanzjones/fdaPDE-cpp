@@ -18,17 +18,18 @@
 #define __DENSITY_ESTIMATION_BASE_H__
 
 #include <fdaPDE/utils.h>
-#include <fdaPDE/linear_algebra.h>
 #include "../model_macros.h"
 #include "../model_traits.h"
 #include "../space_only_base.h"
 #include "../space_time_separable_base.h"
 #include "../sampling_design.h"
-using fdapde::core::BinaryMatrix;
 
 namespace fdapde {
 namespace models {
 
+#define SPACE_LOCS "SPACE_LOCS"
+#define TIME_LOCS "TIME_LOCS"
+  
 namespace internal {
 consteval int de_select_quadrature(int local_dim) { return local_dim == 1 ? 4 : local_dim == 2 ? 6 : 14; }
 };   // namespace internal
@@ -40,11 +41,12 @@ class DensityEstimationBase :
    protected:
     std::function<double(const DVector<double>&)> int_exp_;   // \int_{\mathcal{D}} exp(g(x)), x \in \mathcal{D}
     std::function<DVector<double>(const DVector<double>&)> grad_int_exp_;   // gradient of int_exp
-    BinaryMatrix<Dynamic> point_pattern_;   // n_spatial_locs X n_temporal_locs point pattern matrix
-    DVector<double> g_;                     // expansion coefficients vector of estimated density function
-    DMatrix<double> PsiQuad_;               // reference element basis evaluation at quadrature nodes
-    DVector<double> w_;                     // quadrature weights
-    SpMatrix<double> Upsilon_;              // \Upsilon_(i,:) = \Phi(i,:) \kron S(p_i) \Psi
+    DVector<double> g_;          // expansion coefficients vector of estimated density function
+    DMatrix<double> PsiQuad_;    // reference element basis evaluation at quadrature nodes
+    DVector<double> w_;          // quadrature weights
+    SpMatrix<double> Upsilon_;   // \Upsilon_(i,:) = \Phi(i,:) \kron S(p_i) \Psi
+    SpMatrix<double> B_;         // \Upsilon matrix corrected for masked observations
+    BinaryVector<Dynamic> mask_;
 
     template <typename IntegratorType_, typename BasisType_>
     DMatrix<double> eval_basis_at_quadrature_(BasisType_&& basis, IntegratorType_&& integrator) const {
@@ -56,7 +58,9 @@ class DensityEstimationBase :
         return result;
     }
    public:
+    static constexpr int DomainDimension = fdapde::Dynamic;
     using Base = typename select_regularization_base<Model, RegularizationType>::type;
+    using Base::model;
     using SamplingBase<Model>::Psi;     // matrix of basis evaluations at data locations
     using SamplingBase<Model>::n_spatial_locs;
 
@@ -119,8 +123,8 @@ class DensityEstimationBase :
           [&, n = s_pen.reference_basis().size(), m = t_pen.reference_basis().size()](const DVector<double>& g) {
               double result = 0;
               DVector<int> active_dofs(n * m);
-              for (auto e = s_pen.domain().cells_begin(); e != s_pen.domain().cells_end(); ++e) {
-                  for (auto i = t_pen.domain().cells_begin(); i != t_pen.domain().cells_end(); ++i) {
+              for (auto e = s_pen.domain().cells_begin(); e != s_pen.domain().cells_end(); ++e) {       // space loop
+                  for (auto i = t_pen.domain().cells_begin(); i != t_pen.domain().cells_end(); ++i) {   // time loop
                       for (int j = 0; j < m; ++j) {   // compute active dofs
                           active_dofs.middleRows(j * n, n) =
                             s_pen.dofs().row(e->id()).transpose().array() + j * Base::n_spatial_basis();
@@ -136,8 +140,8 @@ class DensityEstimationBase :
 	  [&, n = s_pen.reference_basis().size(), m = t_pen.reference_basis().size()](const DVector<double>& g) {
             DVector<double> grad = DVector<double>::Zero(g.rows());
             DVector<int> active_dofs(n * m);
-            for (auto e = s_pen.domain().cells_begin(); e != s_pen.domain().cells_end(); ++e) {
-                for (auto i = t_pen.domain().cells_begin(); i != t_pen.domain().cells_end(); ++i) {
+            for (auto e = s_pen.domain().cells_begin(); e != s_pen.domain().cells_end(); ++e) {       // space loop
+                for (auto i = t_pen.domain().cells_begin(); i != t_pen.domain().cells_end(); ++i) {   // time loop
                     for (int j = 0; j < m; ++j) {   // compute active dofs
                         active_dofs.middleRows(j * n, n) =
                           s_pen.dofs().row(e->id()).transpose().array() + j * Base::n_spatial_basis();
@@ -151,12 +155,29 @@ class DensityEstimationBase :
         };
     }
 
-  // we must give a proper view of the data here, because locations are the data and now there is no such managing capability
-  
+    // setters
+    // redefine set_data() as it forwards data as locations in density estimation
+    void set_data(const BlockFrame<double, int>& df, bool reindex = false) {
+        fdapde_assert(
+          df.cols() > 0 &&
+          ((is_space_only<Model>::value && df.has_block(SPACE_LOCS)) ||
+            (is_space_time_separable<Model>::value && df.has_block(SPACE_LOCS) && df.has_block(TIME_LOCS))));
+        Base::set_data(df, reindex);
+        if (df.has_block(SPACE_LOCS)) SamplingBase<Model>::set_spatial_locations(df.get<double>(SPACE_LOCS));
+        if constexpr (is_space_time_separable<Model>::value) Base::set_temporal_locations(df.get<double>(TIME_LOCS));
+    }
+    void set_mask(const BinaryVector<fdapde::Dynamic>& mask) {
+        fdapde_assert(mask.size() == n_locs());
+        if (mask.any()) {
+            model().runtime().set(runtime_status::require_psi_correction);
+            mask_ = mask;   // mask[i] == true, removes the contribution of the i-th observation from fit
+        }
+    }
     // getters
-    int n_obs() const { return point_pattern_.count(); };
-    const SpMatrix<double>& Psi() const { return Psi(not_nan()); }
-    const SpMatrix<double>& Upsilon() const { return is_space_only<Model>::value ? Psi() : Upsilon_; }
+    int n_obs() const { return Base::df_.rows() - mask_.count(); };
+    int n_locs() const { return Base::df_.rows(); }
+    const SpMatrix<double>& Psi() const { return is_space_only<Model>::value ? Psi(not_nan()) : Upsilon_; }
+    const SpMatrix<double>& Upsilon() const { return !is_empty(B_) ? B_ : Psi(); }
     const DMatrix<double>& PsiQuad() const { return PsiQuad_; }
     const DMatrix<double>& w() const { return w_; }
     double int_exp(const DVector<double>& g) const { return int_exp_(g); }
@@ -165,35 +186,34 @@ class DensityEstimationBase :
     DVector<double> grad_int_exp() const { return grad_int_exp_(g_); }
     const DVector<double>& g() const { return g_; }          // expansion coefficient vector of log density field
     DVector<double> f() const { return g_.array().exp(); }   // expansion coefficient vector of density field
+    const BinaryVector<Dynamic>& masked_obs() const { return mask_; }
 
     // initialization methods
     void analyze_data() {
         if constexpr (is_space_time_separable<Model>::value) {
-	  Upsilon_.resize(Base::n_temporal_locs(), Base::n_basis());
-            std::vector<fdapde::Triplet<double>> triplet_list;
-            // reserve with some bound
-            for (int i = 0; i < Base::n_temporal_locs(); ++i) {
-	      // kronecker product between Phi i-th row and Psi i-th row
-	      SpMatrix<double> tmp = Kronecker(SpMatrix<double>(Base::Phi().row(i)), SpMatrix<double>(Psi().row(i)));
-                for (int j = 0; j < tmp.outerSize(); ++j)
-                    for (SpMatrix<double>::InnerIterator it(tmp, j); it; ++it) {
-                        triplet_list.emplace_back(i, it.col(), it.value());
-                    }
+            if (is_empty(Upsilon_)) {
+                Upsilon_.resize(Base::n_temporal_locs(), Base::n_basis());
+                std::vector<fdapde::Triplet<double>> triplet_list;
+                // reserve with some bound
+                for (int i = 0; i < Base::n_temporal_locs(); ++i) {
+                    // kronecker product between Phi i-th row and Psi i-th row
+                    SpMatrix<double> tmp =
+                      Kronecker(SpMatrix<double>(Base::Phi().row(i)), SpMatrix<double>(Psi().row(i)));
+                    for (int j = 0; j < tmp.outerSize(); ++j)
+                        for (SpMatrix<double>::InnerIterator it(tmp, j); it; ++it) {
+                            triplet_list.emplace_back(i, it.col(), it.value());
+                        }
+                }
+                Upsilon_.setFromTriplets(triplet_list.begin(), triplet_list.end());
+                Upsilon_.makeCompressed();
             }
-            Upsilon_.setFromTriplets(triplet_list.begin(), triplet_list.end());
-            Upsilon_.makeCompressed();
-            // if (point_pattern_.size() == 0) {
-            //     point_pattern_ = BinaryMatrix<Dynamic>::Ones(n_spatial_locs(), Base::n_temporal_locs());
-            // }
-        } else {
-            point_pattern_ = BinaryMatrix<Dynamic>::Ones(Base::n_locs(), 1);
         }
         return;
     }
-
     void tensorize_psi() { return; }   // avoid tensorization for space-time problems
-    void correct_psi() { return; }
-    void set_point_pattern(const BinaryMatrix<Dynamic>& point_pattern) { point_pattern_ = point_pattern; }
+    void correct_psi() {
+      if (masked_obs().any()) B_ = (~masked_obs().repeat(1, Base::n_basis())).select(Psi());
+    }
 };
 
 }   // namespace models
