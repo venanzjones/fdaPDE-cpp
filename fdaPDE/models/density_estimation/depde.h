@@ -30,19 +30,19 @@ template <typename RegularizationType_>
 class DEPDE : public DensityEstimationBase<DEPDE<RegularizationType_>, RegularizationType_> {
    private:
     using Base = DensityEstimationBase<DEPDE<RegularizationType_>, RegularizationType_>;
-    double tol_ = 1e-5;   // tolerance on custom stopping criterion
+    double tol_ = 1e-5;        // tolerance on custom stopping criterion
+    DVector<double> g_init_;   // density initialization basis expansion coefficients
     core::Optimizer<DEPDE<RegularizationType_>> opt_;
-    DVector<double> g_init_; 
    public:
     using RegularizationType = std::decay_t<RegularizationType_>;
     using This = DEPDE<RegularizationType>;
-    using Base::grad_int_exp;   // \nabla_g (\int_{\mathcal{D}} \exp(g))
-    using Base::int_exp;        // \int_{\mathcal{D}} \exp(g)
+    using Base::grad_int_exp;   // \nabla_g (\int_{\Omega} \exp(g))
+    using Base::int_exp;        // \int_{\Omega} \exp(g)
     using Base::n_locs;         // overall number of data locations
-    using Base::n_obs;          // number of observations
-    using Base::P;              // discretized penalty matrix
+    using Base::n_obs;          // number of observations (!= n_locs if masked)
+    using Base::P;              // discretized penalty matrix R_1^\top * (R_0)^{-1} * R_1
     using Base::PsiQuad;        // reference basis evaluation at quadrature nodes
-    using Base::Upsilon;        // \Upsilon_(i,:) = \Phi(i,:) \kron S(p_i) \Psi
+    using Base::Upsilon;        // \Upsilon_(i,:) = is_space_only<Model> ? \Psi : \Phi(i,:) \kron S(p_i) \Psi
 
     // space-only constructor
     template <typename PDE_>
@@ -87,10 +87,26 @@ class DEPDE : public DensityEstimationBase<DEPDE<RegularizationType_>, Regulariz
 	};
     }
     // optimization algorithm custom stopping criterion
-    bool stopping_criterion(const DVector<double>& g) {
-        double llik = -(Upsilon() * g).sum() + n_locs() * int_exp(g);
-        double loss = llik + g.dot(P() * g);
-        return llik > tol_ || loss > tol_;
+    template <typename OptimizerType> bool opt_stopping_criterion(OptimizerType& opt) {
+        // opt.x_old: density function before update step, opt.x_new: density function after update step
+        bool stop = true;
+        double llik_old = -(Upsilon() * opt.x_old).sum() + n_obs() * int_exp(opt.x_old);
+        double llik_new = -(Upsilon() * opt.x_new).sum() + n_obs() * int_exp(opt.x_new);
+	stop &= std::abs((llik_new - llik_old) / llik_old) < tol_;
+	if(!stop) return false;	
+        double penD_old = Base::xtPDx(opt.x_old), penD_new = Base::xtPDx(opt.x_new); //opt.x_old.dot(Base::PD() * opt.x_old);
+        stop &= std::abs((penD_new - penD_old) / penD_old) < tol_;
+        if (!stop) return false;
+        double loss_old = llik_old + Base::lambda_D() * penD_old, loss_new = llik_new + Base::lambda_D() * penD_new;
+        // space-time case
+        if constexpr (is_space_time_separable<This>::value) {
+            double penT_old = Base::xtPTx(opt.x_old), penT_new = Base::xtPTx(opt.x_new);
+            loss_old += Base::lambda_T() * penT_old;
+            loss_new += Base::lambda_T() * penT_new;
+            stop &= std::abs((penT_new - penT_old) / penT_old) < tol_;
+        }
+	stop &= std::abs((loss_new - loss_old) / loss_old) < tol_;
+	return stop;
     }
     // call optimization algorithm for log-likelihood minimization
     void solve() { Base::g_ = opt_.optimize(*this, g_init_); }
@@ -98,7 +114,8 @@ class DEPDE : public DensityEstimationBase<DEPDE<RegularizationType_>, Regulariz
     // setters
     void set_tolerance(double tol) { tol_ = tol; }
     void set_g_init(const DVector<double>& g_init) { g_init_ = g_init; }
-    template <typename Optimizer> void set_optimizer(Optimizer&& opt) { opt_ = opt; }
+    void set_f_init(const DVector<double>& f_init) { g_init_ = f_init.array().log(); }
+    template <typename OptimizerType> void set_optimizer(OptimizerType&& opt) { opt_ = opt; }
     // getters
     const DVector<double>& g_init() const { return g_init_; }
 };

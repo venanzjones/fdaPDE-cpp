@@ -102,6 +102,9 @@ class SpaceTimeSeparableBase : public SpaceTimeBase<Model, SpaceTimeSeparable> {
         }
         return PD_;
     }
+    // evaluation of x^\top*PD*x and x^\top*PT*x
+    double xtPDx(const DVector<double>& x) const { return x.dot(PD() * x); }
+    double xtPTx(const DVector<double>& x) const { return x.dot(PT() * x); }
     // discretized penalty P = \lambda_D*(P0 \kron (R1^T*R0^{-1}*R1)) + \lambda_T*(P1 \kron R0)
     auto P(const SVector<n_lambda>& lambda) const { return lambda[0] * PD() + lambda[1] * PT(); }
     auto P() const { return P(Base::lambda()); }
