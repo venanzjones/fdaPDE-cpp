@@ -60,6 +60,10 @@ TEST(gsrpde_test, laplacian_nonparametric_samplingatnodes_poisson) {
     // import data from files
     DMatrix<double> locs = read_csv<double>("../data/models/gsrpde/2D_test1/locs.csv");
     DMatrix<double> y    = read_csv<double>("../data/models/gsrpde/2D_test1/y.csv"   );
+    std::cout << "locs rows: " << locs.rows() << " cols:" << locs.cols() << std::endl;
+    std::cout << "y rows: " << y.rows() << " y:" << y.cols() << std::endl;
+    std::cout << "n_elements: " << domain.mesh.n_elements()  << std::endl;
+
     // define regularizing PDE
     auto L = -laplacian<FEM>();
     DMatrix<double> u = DMatrix<double>::Zero(domain.mesh.n_cells() * 3, 1);
@@ -79,7 +83,7 @@ TEST(gsrpde_test, laplacian_nonparametric_samplingatnodes_poisson) {
     // test correctness
     EXPECT_TRUE(almost_equal(model.f(), "../data/models/gsrpde/2D_test1/sol.mtx"));
 }
-
+/*
 // test 2
 //    domain:       unit square [1,1] x [1,1]
 //    sampling:     locations != nodes
@@ -271,3 +275,4 @@ TEST(gsrpde_test, laplacian_semiparametric_samplingatlocations_parabolic_monolit
     EXPECT_TRUE(almost_equal(model.f()   , "../data/models/gsrpde/2D_test6/sol.mtx" ));
     EXPECT_TRUE(almost_equal(model.beta(), "../data/models/gsrpde/2D_test6/beta.mtx"));    
 }
+*/

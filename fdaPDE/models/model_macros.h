@@ -69,5 +69,8 @@
 #define INDEXES_BLK       "INDEXES"         // observation indices
 #define DESIGN_MATRIX_BLK "DESIGN_MATRIX"   // covariates
 #define WEIGHTS_BLK       "WEIGHTS"         // weights for heteroskedastic observations
+#define X_BLK             "X"               // grid
+#define Y_BLK             "Y"               // values
+#define M_BLK             "M"               // memberships
 
 #endif   // __MODEL_MACROS_H__
