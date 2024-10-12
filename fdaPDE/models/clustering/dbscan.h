@@ -25,8 +25,9 @@
 #include "clustering_base.h"
 #include "../../core/fdaPDE/geometry/kd_tree.h"
 
-// questo è ok ma la distance euclidea viene calcolate in KDtree, devo sovrascribere la classe?
+// Questo è ok ma la distance euclidea viene calcolate in KDtree, devo sovrascribere la classe?
 // per metterci R0?
+
 namespace fdapde {
 namespace models {
 
@@ -56,7 +57,7 @@ public:
 
     void solve() {
         // Initialize KDTree with the data points
-    
+        // this still needs to be fixed, but naive implementation works
         fdapde::core::KDTree<n_basis> tree(y());
 
         unsigned clusterId = 0;

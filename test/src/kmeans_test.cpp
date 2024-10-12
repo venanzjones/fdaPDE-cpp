@@ -37,7 +37,8 @@ using fdapde::models::ExactEDF;
 using fdapde::models::GCV;
 using fdapde::models::StochasticEDF;
 using fdapde::core::Grid;
-
+using fdapde::core::Mesh2D;
+/*
 TEST(dbscan_test, 1d_test) {
 
     Mesh<1, 1> unit_interval(0, 6.28318530717959, 5);
@@ -46,7 +47,7 @@ TEST(dbscan_test, 1d_test) {
     pde.init();
     DMatrix<double> X = read_csv<double>("../data/models/clustering/1D_test/X.csv");
     DMatrix<double> Y = read_csv<double>("../data/models/clustering/1D_test/Y.csv");
-    HierarchicalSingle model(pde, Sampling::pointwise,3);
+    KMEANS model(pde, Sampling::pointwise,3);
     model.set_spatial_locations(X);
     double lambda = 0.00003173365;
     model.init();
@@ -57,7 +58,7 @@ TEST(dbscan_test, 1d_test) {
     model.set_data(f_spline);
     model.solve();
 }
-
+*/
 /*
 TEST(dbscan_test, 1d_test) {
 
@@ -78,7 +79,7 @@ TEST(dbscan_test, 1d_test) {
     model.set_data(f_spline);
     model.solve();
 }
-
+*/
 
 TEST(kmeans_test, clustering_1d_test) {
 
@@ -189,4 +190,3 @@ TEST(kmeans_test_3, clustering_2d_test_gcv) {
     model.solve();
     // EXPECT_TRUE(int_equal(model.memberships(), "../data/models/clustering/1D_test/ground_truth.csv"));
 }
-*/
