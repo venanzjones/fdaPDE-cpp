@@ -17,7 +17,7 @@
 #ifndef KMEDOIDS_H
 #define KMEDOIDS_H
 
-#include "similarities.h" 
+#include "dissimilarities.h" 
 #include <vector>
 #include <limits>
 #include <algorithm>
@@ -62,7 +62,6 @@ public:
         n_obs_ = Y_.rows(); 
         if (k_ <= 0 || static_cast<std::size_t>(k_) > n_obs_) { 
             throw std::runtime_error("Invalid number of clusters.");
-
         }
         // Assembly the NxN distance matrix (O(n_obs_^2))
         d_matrix_.resize(n_obs_, n_obs_);
@@ -83,7 +82,7 @@ public:
             throw std::runtime_error("No data provided.");
         }
 
-        build();                // Initialize medoids, O(k*n^2)
+        build();                  // Initialize medoids, O(k*n^2)
         bool f_improved = true;
         while(f_improved && n_iter_ < max_iter_) {
             assign_obs();         // Assign observations to medoids, O(k*n)
@@ -97,7 +96,7 @@ public:
 
     // Getters
     const std::vector<int>& memberships() const { return memberships_; } 
-    const std::vector<int>& medoids() const { return medoids_; }      
+    const std::vector<int>& medoid_ids() const { return medoids_; }      
     const Eigen::VectorXd& d_to_medoids() const { return d_to_medoids_; }  
     unsigned n_iterations() const { return n_iter_; }                    
 
