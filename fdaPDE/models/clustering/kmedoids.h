@@ -108,7 +108,7 @@ private:
         dist_to_set.setConstant(std::numeric_limits<double>::infinity());
 
         for (int m = 0; m < k_; ++m) {
-            std::size_t best_candidate = -1;
+            std::size_t best_candidate(0); 
             double best_cost = std::numeric_limits<double>::infinity();
 
             // Loop over all the observations
