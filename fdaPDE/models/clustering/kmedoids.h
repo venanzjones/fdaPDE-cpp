@@ -1,4 +1,4 @@
-/// This file is part of fdaPDE, a C++ library for physics-informed
+// This file is part of fdaPDE, a C++ library for physics-informed
 // spatial and functional data analysis.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -35,7 +35,7 @@ class KMedoids {
 private:
     const Eigen::MatrixXd& Y_;      // n_obs_ x n_nodes matrix 
     DistancePolicy dist_;           // policy for computing distances  
-    int k_;                         // number of clusters
+    unsigned k_;                    // number of clusters
     unsigned max_iter_;             // max iterations allowed
     unsigned n_iter_ = 0;           // iterations done
     std::size_t n_obs_;             // number of observations
@@ -60,7 +60,7 @@ public:
           medoid_mask_(Y.rows(), false)     // initialize medoid_mask_ to false
     {
         n_obs_ = Y_.rows(); 
-        if (k_ <= 0 || static_cast<std::size_t>(k_) > n_obs_) { 
+        if (k <= 0 || static_cast<std::size_t>(k) > n_obs_) { 
             throw std::runtime_error("Invalid number of clusters.");
         }
         // Assembly the NxN distance matrix (O(n_obs_^2))

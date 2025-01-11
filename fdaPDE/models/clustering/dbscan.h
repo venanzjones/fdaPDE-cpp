@@ -34,10 +34,10 @@ private:
 
     using NeighbouroodType = std::vector<int>;
     const Eigen::MatrixXd& Y_;
-    DistancePolicy distance_policy_;
+    DistancePolicy dist_;
     double eps_;
     unsigned min_pts_; 
-    Eigen::VectorXi memberships_; // -2: unvisited, -1: noise, >=0: cluster id
+    std::vector<int> memberships_; // -2: unvisited, -1: noise, >=0: cluster id
     Eigen::MatrixXd dist_matrix_;
     std::vector<int> cluster_counts_;
     int n_clusters_;
@@ -51,10 +51,10 @@ public:
            double eps,
            unsigned min_pts)
         : Y_(Y),
-          distance_policy_(dist),
+          dist_(dist),
           eps_(eps),
           min_pts_(min_pts),
-          memberships_(Eigen::VectorXi::Constant(Y.rows(), -2)),
+          memberships_(Y.rows(), -2),
           dist_matrix_(Y.rows(), Y.rows())
     {
         n_obs_ = Y_.rows();
@@ -72,7 +72,7 @@ public:
             dist_matrix_(i, i) = 0.0;
             neighborhoods_[i] = nn_search(i);
             for (std::size_t j = i + 1; j < n_obs_; ++j) {
-                double d = distance_policy_(Y_.row(i), Y_.row(j));
+                double d = dist_(Y_.row(i), Y_.row(j));
                 dist_matrix_(i, j) = d;
                 dist_matrix_(j, i) = d;
             }
@@ -101,7 +101,7 @@ public:
         }
     }
 
-    const Eigen::VectorXi& memberships() const { return memberships_; }
+    const std::vector<int>& memberships() const { return memberships_; }
     int num_clusters() const { return n_clusters_; }
 
 private:
@@ -141,7 +141,9 @@ private:
                     }
                 }
             }
-        } else if (memberships_[curr] == -1) { // If noise, include in the cluster
+        } 
+        // If noise, include in the cluster
+        else if (memberships_[curr] == -1) {
             memberships_[curr] = cluster_id;
             cluster_counts_[cluster_id]++;
         }
