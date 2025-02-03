@@ -1,4 +1,4 @@
-<div align="center"> <h1> fdaPDE </h1>
+<div align="center"> <h1> Clustering in fdaPDE </h1>
 
 <h5> Physics-Informed Spatial and Functional Data Analysis </h5> </div>
 
@@ -6,9 +6,7 @@
 ![test-linux-clang](https://img.shields.io/github/actions/workflow/status/fdaPDE/fdaPDE-cpp/test-linux-clang.yml?branch=stable&label=test-linux-clang)
 ![test-macos-clang](https://img.shields.io/github/actions/workflow/status/fdaPDE/fdaPDE-cpp/test-macos-clang.yml?branch=stable&label=test-macos-clang)
 
-fdaPDE is a C++ library for the analysis of spatial and functional data observed over complex multidimensional domains, featuring a Partial Differential Equation regularization. 
-
+This repository is a fork of the fdaPDE, an header only C++ library for the analysis of spatial and functional data observed over complex multidimensional domains.
 It is built on top of the [fdaPDE Core Library](https://github.com/fdaPDE/fdaPDE-core).
-
-## Documentation
-Documentation can be found on our [documentation site](https://fdapde.github.io/)
+This project was developed by MSc Mathematical Engineering student Alessandro Venanzi (10723478) under the supervision of professor Laura M. Sangalli, professor Eleonora Arnone, doctor Alessandro Palummo and doctor Michele Cavazzuti. 
+Our contribution features the whole implemenataion of the clustering module, as well as validation tests in both full-observable and partial-observable data.
