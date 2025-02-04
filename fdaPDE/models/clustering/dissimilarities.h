@@ -22,7 +22,6 @@
 
 // d(f,g) = sqrt((f-g)^T R0 (f-g))
 struct L2Policy {
-
     Eigen::MatrixXd R0_;
     L2Policy(const Eigen::MatrixXd& R0)
         : R0_(R0)
@@ -34,7 +33,7 @@ struct L2Policy {
 
     template <typename T1, typename T2>
     double operator()(const Eigen::MatrixBase<T1>& f,
-                      const Eigen::MatrixBase<T1>& g) const 
+                      const Eigen::MatrixBase<T2>& g) const 
     {
         Eigen::VectorXd diff = f - g;
         double squared_norm = diff.transpose() * R0_ * diff;
@@ -65,13 +64,13 @@ struct L2NormalizedPolicy {
         double denom = std::sqrt(f_squared) + std::sqrt(g_squared);
 
         if (denom < 1e-14) {
-            return std::numeric_limits<double>::infinity(); 
+            return squared_norm; 
         }
         return std::sqrt(squared_norm) / denom;
     }
 };
 
-
+// d(f,g) = sqrt((f-g)^T R1 (f-g))
 struct R1Policy {
     Eigen::MatrixXd R1_;
 
@@ -109,14 +108,14 @@ struct NormalizedR1Policy {
     double operator()(const Eigen::MatrixBase<T1>& f,
                       const Eigen::MatrixBase<T2>& g) const
     {
-        Eigen::VectorXd diff = f - b;
+        Eigen::VectorXd diff = f - g;
         double squared_norm = diff.transpose() * R1_ * diff;
         double f_squared = f.transpose() * R1_ * f;
         double g_squared = g.transpose() * R1_ * g;
         double denom = std::sqrt(f_squared) + std::sqrt(g_squared);
 
         if (denom < 1e-14) {
-            return std::numeric_limits<double>::infinity(); 
+            return squared_norm; 
         }
         return std::sqrt(squared_norm) / denom;
     }
@@ -187,21 +186,20 @@ struct SobolevPolicyNormalized {
 
         double denom = std::sqrt(f_squared) + std::sqrt(g_squared);
         if (denom < 1e-14) {
-            return 0.0;
+            return squared_norm;
         }
         return std::sqrt(squared_norm) / denom;
     }
 };
 
+// d(f,g) = sqrt((f-g)^T R0 (f-g))
 class L2PolicyPartialObservability
 {
 private:
     Eigen::MatrixXd R0_;
-
 public:
     // Constructor: R0 is expected to be a square matrix.
-    L2Policy(const Eigen::MatrixXd &R0) : R0_(R0) {}
-
+    L2PolicyPartialObservability(const Eigen::MatrixXd &R0) : R0_(R0) {}
     template <typename T1, typename T2>
     double operator()(const T1 &f, const T2 &g) const 
     {
@@ -215,19 +213,16 @@ public:
                 valid_indices.push_back(j);
             }
         }
-
         if (valid_indices.empty()) {
             // No valid indices, we can not compare functions
             return 0.0;
         }
-
         // Where is possible, build the vector containing the differences
         Eigen::VectorXd diff_valid(valid_indices.size());
         for (std::size_t i = 0; i < valid_indices.size(); ++i)
         {
             diff_valid(i) = f[valid_indices[i]] - g[valid_indices[i]];
         }
-
         // Check whether data is contiguous (as in common domain case)
         bool is_contiguous = true;
         for (std::size_t i = 1; i < valid_indices.size(); ++i)
@@ -238,7 +233,6 @@ public:
                 break;
             }
         }
-
         double squared_norm = 0.0;
         if (is_contiguous)
         {
@@ -262,4 +256,6 @@ public:
         return std::sqrt(squared_norm);
     }
 };
+
+
 #endif // DISSIMILARITIES_H
