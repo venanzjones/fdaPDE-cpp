@@ -25,6 +25,7 @@
 #include <iterator>  
 #include <numeric>  
 #include <ranges>    
+#include <optional>
 #include "dissimilarities.h"
 
 namespace fdapde {
@@ -112,7 +113,7 @@ namespace fdapde {
                     std::optional<unsigned> seed = std::nullopt) const
             {
                 if (k > Y.rows()){
-                    throw std::runtime_error("k cannot be smaller than the number of observations.");
+                    throw std::runtime_error("k cannot be greater than the number of observations.");
                 }  
                 const int n = Y.rows();
 
