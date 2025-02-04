@@ -107,7 +107,7 @@ private:
         Eigen::VectorXd dist_to_set(n_obs_);
         dist_to_set.setConstant(std::numeric_limits<double>::infinity());
 
-        for (int m = 0; m < k_; ++m) {
+        for (unsigned m = 0; m < k_; ++m) {
             std::size_t best_candidate(0); 
             double best_cost = std::numeric_limits<double>::infinity();
 
@@ -144,7 +144,7 @@ private:
             double best_d = std::numeric_limits<double>::infinity();
             int best_m = -1;
             // Loop over all the medoids
-            for (int m = 0; m < k_; ++m) {
+            for (unsigned m = 0; m < k_; ++m) {
                 int medoid_idx = medoids_[m];
                 double d = d_matrix_(i, medoid_idx); 
                 if (d < best_d) {
@@ -166,7 +166,7 @@ private:
         std::size_t best_non_medoid = -1;
 
         // Loop over the medoids
-        for (int m = 0; m < k_; ++m) {
+        for (unsigned m = 0; m < k_; ++m) {
             int old_medoid = medoids_[m];
             for (std::size_t c = 0; c < n_obs_; ++c) {
                 if (medoid_mask_[c]) {
@@ -193,9 +193,9 @@ private:
     }
 
     // Computes the cost of swapping old_medoid with candidate
-    double swap_delta(int cluster_id,           // cluster id (0,...,k-1)
-                      int old_medoid,           // old medoid id 
-                      std::size_t candidate) const // candidate id 
+    double swap_delta(unsigned cluster_id,           // cluster id (0,...,k-1)
+                      int old_medoid,                // old medoid id 
+                      std::size_t candidate) const   // candidate id 
     {
         double delta = 0.0;
         // Loop over the observations
@@ -209,7 +209,7 @@ private:
             if (i_med == old_medoid) {
                 double best_d = std::numeric_limits<double>::infinity();
                 // Loop over the clusters
-                for (int l = 0; l < k_; ++l) {
+                for (unsigned l = 0; l < k_; ++l) {
                     // if l == cluster_id, we are considering the candidate as medoid
                     if (l == cluster_id) {
                         double d_c = d_matrix_(i, candidate);

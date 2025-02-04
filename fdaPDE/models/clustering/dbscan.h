@@ -32,7 +32,7 @@ template <typename DistancePolicy>
 class DBSCAN {
 private:
 
-    using NeighbouroodType = std::vector<int>;
+    using NeighborType = std::vector<int>;
     const Eigen::MatrixXd& Y_;
     DistancePolicy dist_;
     double eps_;
@@ -42,7 +42,7 @@ private:
     std::vector<int> cluster_counts_;
     int n_clusters_;
     std::size_t n_obs_;
-    std::vector<NeighbouroodType> neighborhoods_;
+    std::vector<NeighborType> neighbors_;
 
 public:
 
@@ -58,7 +58,7 @@ public:
           dist_matrix_(Y.rows(), Y.rows())
     {
         n_obs_ = Y_.rows();
-        neighborhoods_.resize(n_obs_);      
+        neighbors_.resize(n_obs_);      
         if (Y_.rows() == 0) {
             throw std::runtime_error("Y bust be non-empty");
         }
@@ -70,12 +70,15 @@ public:
         }
         for (std::size_t i = 0; i < n_obs_; ++i) {
             dist_matrix_(i, i) = 0.0;
-            neighborhoods_[i] = nn_search(i);
             for (std::size_t j = i + 1; j < n_obs_; ++j) {
                 double d = dist_(Y_.row(i), Y_.row(j));
                 dist_matrix_(i, j) = d;
                 dist_matrix_(j, i) = d;
             }
+        }
+        // Not in the above loop since the distance matrix is not fully initialized yet
+        for(std::size_t i = 0; i < n_obs_; ++i) {
+            neighbors_[i] = nn_search(i);
         }
    
     }
@@ -90,7 +93,7 @@ public:
                 continue; // Skip visited points
             }
 
-            const auto& neighbors = neighborhoods_[i];
+            const auto& neighbors = neighbors_[i];
             if (neighbors.size() < min_pts_) {
                 memberships_[i] = -1; // Mark as noise
             } else {
@@ -100,14 +103,16 @@ public:
             }
         }
     }
-
+    
+    // Getters:
     const std::vector<int>& memberships() const { return memberships_; }
-    int num_clusters() const { return n_clusters_; }
+    int n_clusters() const { return n_clusters_; }
+    const std::vector<int>& cluster_counts() const { return cluster_counts_; }
 
 private:
-    
-    NeighbouroodType nn_search(std::size_t i) const {
-        NeighbouroodType neighbors;
+    // Neighbour search, exploits precomputed neighbors matrix
+    NeighborType nn_search(std::size_t i) const {
+        NeighborType neighbors;
         for (std::size_t j = 0; j < n_obs_; ++j) {
             if (dist_matrix_(i, j) <= eps_) {
                 neighbors.push_back(j);
@@ -116,39 +121,40 @@ private:
         return neighbors;
     }
 
+    // Expand the cluster starting from the core point i
     void expand(std::size_t i, int cluster_id) {
-    memberships_[i] = cluster_id;
-    cluster_counts_[cluster_id]++;
+        memberships_[i] = cluster_id;
+        cluster_counts_[cluster_id]++;
 
-    std::queue<int> q;
-    for (int nb : neighborhoods_[i]) {
-        q.push(nb);
-    }
+        std::queue<int> q;
+        for (int nb : neighbors_[i]) {
+            q.push(nb);
+        }
 
-    while (!q.empty()) {
-        int curr = q.front();
-        q.pop();
+        while (!q.empty()) {
+            int curr = q.front();
+            q.pop();
 
-        if (memberships_[curr] == -2) { // If unvisited
-            memberships_[curr] = cluster_id;
-            cluster_counts_[cluster_id]++;
+            if (memberships_[curr] == -2) { // If unvisited
+                memberships_[curr] = cluster_id;
+                cluster_counts_[cluster_id]++;
 
-            // Add neighbors of curr to the queue if it's a core point
-            if (neighborhoods_[curr].size() >= min_pts_) {
-                for (int nb : neighborhoods_[curr]) {
-                    if (memberships_[nb] == -2 || memberships_[nb] == -1) {
-                        q.push(nb);
+                // Add neighbors of curr to the queue if it's a core point
+                if (neighbors_[curr].size() >= min_pts_) {
+                    for (int nb : neighbors_[curr]) {
+                        if (memberships_[nb] == -2 || memberships_[nb] == -1) {
+                            q.push(nb);
+                        }
                     }
                 }
+            } 
+            // If noise, include in the cluster
+            else if (memberships_[curr] == -1) {
+                memberships_[curr] = cluster_id;
+                cluster_counts_[cluster_id]++;
             }
-        } 
-        // If noise, include in the cluster
-        else if (memberships_[curr] == -1) {
-            memberships_[curr] = cluster_id;
-            cluster_counts_[cluster_id]++;
         }
     }
-}
 };
 
 } // namespace models

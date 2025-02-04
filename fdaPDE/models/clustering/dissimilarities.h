@@ -33,8 +33,8 @@ struct L2Policy {
     }
 
     template <typename T1, typename T2>
-    double operator()(const T1& f,
-                      const T2& g) const 
+    double operator()(const Eigen::MatrixBase<T1>& f,
+                      const Eigen::MatrixBase<T1>& g) const 
     {
         Eigen::VectorXd diff = f - g;
         double squared_norm = diff.transpose() * R0_ * diff;
@@ -59,16 +59,15 @@ struct L2NormalizedPolicy {
                       const Eigen::MatrixBase<T2>& g) const 
     {
         Eigen::VectorXd diff = f - g;
-        double val_fg = diff.transpose() * R0_ * diff;
-        double ff = f.transpose() * R0_ * f;
-        double gg = g.transpose() * R0_ * g;
-        double denom = std::sqrt(ff) + std::sqrt(gg);
+        double squared_norm = diff.transpose() * R0_ * diff;
+        double f_squared = f.transpose() * R0_ * f;
+        double g_squared = g.transpose() * R0_ * g;
+        double denom = std::sqrt(f_squared) + std::sqrt(g_squared);
 
-        // If denom is extremely small, handle gracefully (avoid /0).
         if (denom < 1e-14) {
-            return 0.0; // or consider returning sqrt(val_fg)
+            return std::numeric_limits<double>::infinity(); 
         }
-        return std::sqrt(val_fg) / denom;
+        return std::sqrt(squared_norm) / denom;
     }
 };
 
@@ -85,12 +84,12 @@ struct R1Policy {
     }
 
     template <typename T1, typename T2>
-    double operator()(const Eigen::MatrixBase<T1>& a,
-                      const Eigen::MatrixBase<T2>& b) const 
+    double operator()(const Eigen::MatrixBase<T1>& f,
+                      const Eigen::MatrixBase<T2>& g) const 
     {
-        Eigen::VectorXd diff = a - b;
-        double val = diff.transpose() * R1_ * diff;
-        return std::sqrt(val);
+        Eigen::VectorXd diff = f - g;
+        double squared_norm = diff.transpose() * R1_ * diff;
+        return std::sqrt(squared_norm);
     }
 };
 
@@ -107,19 +106,19 @@ struct NormalizedR1Policy {
     }
 
     template <typename T1, typename T2>
-    double operator()(const Eigen::MatrixBase<T1>& a,
-                      const Eigen::MatrixBase<T2>& b) const
+    double operator()(const Eigen::MatrixBase<T1>& f,
+                      const Eigen::MatrixBase<T2>& g) const
     {
-        Eigen::VectorXd diff = a - b;
-        double val_ab = diff.transpose() * R1_ * diff;
-        double aa = a.transpose() * R1_ * a;
-        double bb = b.transpose() * R1_ * b;
-        double denom = std::sqrt(aa) + std::sqrt(bb);
+        Eigen::VectorXd diff = f - b;
+        double squared_norm = diff.transpose() * R1_ * diff;
+        double f_squared = f.transpose() * R1_ * f;
+        double g_squared = g.transpose() * R1_ * g;
+        double denom = std::sqrt(f_squared) + std::sqrt(g_squared);
 
         if (denom < 1e-14) {
-            return 0.0; 
+            return std::numeric_limits<double>::infinity(); 
         }
-        return std::sqrt(val_ab) / denom;
+        return std::sqrt(squared_norm) / denom;
     }
 };
 
@@ -148,8 +147,8 @@ struct SobolevPolicy {
     {
         Eigen::VectorXd diff = f - g;
         // distance = sqrt( diff^T (R0 + R1) diff )
-        double val = diff.transpose() * (R0_ + R1_) * diff;
-        return std::sqrt(val);
+        double squared_norm = diff.transpose() * (R0_ + R1_) * diff;
+        return std::sqrt(squared_norm);
     }
 };
 
@@ -179,19 +178,88 @@ struct SobolevPolicyNormalized {
         Eigen::VectorXd diff = f - g;
         Eigen::MatrixXd M = R0_ + R1_;
 
-        double val_fg = diff.transpose() * M * diff;
+        double squared_norm = diff.transpose() * M * diff;
 
         Eigen::VectorXd f_vector = f;
         Eigen::VectorXd g_vector = g;
-        double val_ff = f_vector.transpose() * M * f_vector;
-        double val_gg = g_vector.transpose() * M * g_vector;
+        double f_squared = f_vector.transpose() * M * f_vector;
+        double g_squared = g_vector.transpose() * M * g_vector;
 
-        double denom = std::sqrt(val_ff) + std::sqrt(val_gg);
+        double denom = std::sqrt(f_squared) + std::sqrt(g_squared);
         if (denom < 1e-14) {
             return 0.0;
         }
-        return std::sqrt(val_fg) / denom;
+        return std::sqrt(squared_norm) / denom;
     }
 };
 
+class L2PolicyPartialObservability
+{
+private:
+    Eigen::MatrixXd R0_;
+
+public:
+    // Constructor: R0 is expected to be a square matrix.
+    L2Policy(const Eigen::MatrixXd &R0) : R0_(R0) {}
+
+    template <typename T1, typename T2>
+    double operator()(const T1 &f, const T2 &g) const 
+    {
+        // Collect indices where neither f nor g are NaN
+        std::vector<int> valid_indices;
+        valid_indices.reserve(f.size());
+        for (int j = 0; j < f.size(); ++j)
+        {
+            if (!std::isnan(f[j]) && !std::isnan(g[j]))
+            {
+                valid_indices.push_back(j);
+            }
+        }
+
+        if (valid_indices.empty()) {
+            // No valid indices, we can not compare functions
+            return 0.0;
+        }
+
+        // Where is possible, build the vector containing the differences
+        Eigen::VectorXd diff_valid(valid_indices.size());
+        for (std::size_t i = 0; i < valid_indices.size(); ++i)
+        {
+            diff_valid(i) = f[valid_indices[i]] - g[valid_indices[i]];
+        }
+
+        // Check whether data is contiguous (as in common domain case)
+        bool is_contiguous = true;
+        for (std::size_t i = 1; i < valid_indices.size(); ++i)
+        {
+            if (valid_indices[i] != valid_indices[i - 1] + 1)
+            {
+                is_contiguous = false;
+                break;
+            }
+        }
+
+        double squared_norm = 0.0;
+        if (is_contiguous)
+        {
+            // If contiguous, we use Eigen's block operation for imrpoved efficiency
+            int start = valid_indices.front();
+            Eigen::MatrixXd R0_valid = R0_.block(start, start, valid_indices.size(), valid_indices.size());
+            squared_norm = diff_valid.transpose() * R0_valid * diff_valid;
+        }
+        else // We compute R0 manually
+        {
+            Eigen::MatrixXd R0_valid(valid_indices.size(), valid_indices.size());
+            for (std::size_t i = 0; i < valid_indices.size(); ++i)
+            {
+                for (std::size_t j = 0; j < valid_indices.size(); ++j)
+                {
+                    R0_valid(i, j) = R0_(valid_indices[i], valid_indices[j]);
+                }
+            }
+            squared_norm = diff_valid.transpose() * R0_valid * diff_valid;
+        }
+        return std::sqrt(squared_norm);
+    }
+};
 #endif // DISSIMILARITIES_H

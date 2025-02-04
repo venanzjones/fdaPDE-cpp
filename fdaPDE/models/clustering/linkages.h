@@ -21,7 +21,7 @@
 
 template <typename T1, typename T2>
 struct SingleLinkage {
-    double update_distance(const T1 dist_ic, 
+    T1 update_distance(const T1 dist_ic, 
                            const T1 dist_jc, 
                            const T2 /*size_i*/,
                            const T2 /*size_c*/) const 
@@ -32,7 +32,7 @@ struct SingleLinkage {
 
 template <typename T1, typename T2>
 struct CompleteLinkage {
-    double update_distance(const T1 dist_ic, 
+    T1 update_distance(const T1 dist_ic, 
                            const T1 dist_jc, 
                            const T2 /*size_i*/,
                            const T2 /*size_c*/) const 
@@ -43,7 +43,7 @@ struct CompleteLinkage {
 
 template <typename T1, typename T2>
 struct AverageLinkage {
-    double update_distance(const T1 dist_ic, 
+    T1 update_distance(const T1 dist_ic, 
                            const T1 dist_jc, 
                            const T2 size_i,
                            const T2 size_j) const 
