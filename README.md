@@ -27,9 +27,7 @@ The header files added are the following:
 To reproduce our simulations, one must clone this repository via:
 
 ```bash
-git clone git@github.com:venanzjones/fdaPDE-cpp.git
-cd fdaPDE-cpp
-git checkout dev_vena
+git clone git@github.com:venanzjones/fdaPDE-cpp.git -b develop-vena
 ```
 
 To be able to compile the code, your system needs to have installed the following dependencies:
@@ -37,12 +35,13 @@ To be able to compile the code, your system needs to have installed the followin
 - **make**
 - **CMake**
 - **Eigen3 (>= 3.4)**
-- **gtest** (version 1.14)
+- **gtest (>= 1.14)**
 
 After cloning the repository and making sure all dependencies are installed, move to the test folder and the following commands to compile the code and generate the executable:
 ```bash
-cd test
+cd fdaPDE-cpp/test
 make
+mkdir results
 ```
 
 Finally, run the tests:
