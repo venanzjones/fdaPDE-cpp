@@ -13,5 +13,3 @@ This project was developed by MSc Mathematical Engineering student Alessandro Ve
 
 Contribution features the whole implemenataion of the clustering module, as well as validation tests in both full-observable and partial-observable data.
 The code structure of the library is presented in the image below.
-
-![image](fdaPDE_high_level_clust.pdf)
