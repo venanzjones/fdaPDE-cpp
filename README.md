@@ -27,7 +27,7 @@ The header files added are the following:
 To reproduce our simulations, one must clone this repository via:
 
 ```bash
-git clone git@github.com:venanzjones/fdaPDE-cpp.git -b develop-vena
+git clone --recursive https://github.com/venanzjones/fdaPDE-cpp.git -b develop-vena
 ```
 
 To be able to compile the code, your system needs to have installed the following dependencies:
