@@ -2,7 +2,7 @@
 // include eigen now to avoid possible linking errors
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
-
+/*
 // regression test suite
 #include "src/srpde_test.cpp"
 #include "src/strpde_test.cpp"
@@ -16,6 +16,10 @@
 #include "src/fpca_test.cpp"
 #include "src/fpls_test.cpp"
 #include "src/centering_test.cpp"
+#include "src/kmeans_test.cpp"
+*/
+#include "src/clustering_test.cpp"
+
 
 int main(int argc, char **argv){
   // start testing
