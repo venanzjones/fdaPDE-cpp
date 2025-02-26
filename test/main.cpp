@@ -1,4 +1,3 @@
-'''
 #include <gtest/gtest.h> // testing framework
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -10,7 +9,7 @@ int main(int argc, char **argv){
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
-'''
+/*
 #include <fdaPDE/core.h>
 #include <cstddef>
 #include <chrono>
@@ -88,5 +87,5 @@ const SpMatrix<double>& T0 = time_pde.mass();
 std::cout << "T0: " << T0.rows() << "   " << T0.cols() << std::endl;
 const SpMatrix<double>& R0_tilde = Kronecker(R0, T0);
 std::cout << "Kron:"  << R0_tilde.rows() << "   " << R0_tilde.cols() << std::endl;
-
 }
+*/
